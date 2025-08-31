@@ -1,0 +1,5 @@
+save_extensions : {'.sav', '.save', '.esm', '.esp', '.bsa', '.ba2','.rpgsave', '.rmmzsave', '.phxsav'}
+white_list_root_path : {'D:\MyDownload\Telegram': ['all'],'C:\\Users\\kongyu\\Documents': ['Phonexies']}
+scan_root_path_list : {'D:\MyDownload\Telegram', 'C:\\Users\\kongyu\\Documents'}
+save_backup_path : 'D:\MyDownload\game-save-backup'
+zip_backup_path : 'D:\MyDownload\game-save-backup-zip'
