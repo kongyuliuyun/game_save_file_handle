@@ -1,0 +1,31 @@
+# Bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+.venv_build/
+venv/
+
+# PyInstaller build output
+build/
+dist/
+*.spec
+
+# IDE
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Distribution
+*.egg-info/
+*.egg
+
+# Logs
+*.log
