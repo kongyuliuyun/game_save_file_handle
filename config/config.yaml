@@ -1,0 +1,8 @@
+# 存档文件扩展名（用,分隔）
+save_extensions : {'.sav', '.save', '.esm', '.esp', '.bsa', '.ba2','.rpgsave', '.rmmzsave', '.phxsav'}
+# 扫描白名单设置（仅用于从config.yaml加载白名单的场景，GUI模式下可动态配置）
+white_list_root_path : {'default': ['all']}
+# 备份输出目录（默认为可执行文件同目录下的 game-save-backup）
+save_backup_path : './game-save-backup'
+# 压缩包输出目录（默认为可执行文件同目录下的 game-save-backup-zip）
+zip_backup_path : './game-save-backup-zip'
