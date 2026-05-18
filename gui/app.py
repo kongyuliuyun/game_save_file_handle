@@ -1,9 +1,12 @@
+import json
 import os
-import subprocess
 import sys
 import threading
 import queue
 import tkinter as tk
+import urllib.parse
+import urllib.request
+import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 try:
@@ -183,22 +186,29 @@ class GameSaveGUI:
         ttk.Label(frame, text="百度云 ByPy 授权",
                   font=("", 12, "bold")).pack(anchor=tk.W, pady=(0, 8))
 
-        ttk.Label(frame, text="1. 点击下方按钮，将弹出命令行窗口\n"
-                  "2. 在浏览器中打开命令行中显示的授权链接\n"
-                  "3. 登录百度账号，获取授权码\n"
-                  "4. 将授权码粘贴到命令行窗口中，按回车\n"
-                  "5. 授权成功！返回本页面切换到「备份任务」即可上传",
+        ttk.Label(frame, text="1. 点击「获取授权链接」，自动在浏览器中打开百度授权页面\n"
+                  "2. 登录百度账号，获取授权码\n"
+                  "3. 将授权码粘贴到下方输入框\n"
+                  "4. 点击「确认授权」完成",
                   wraplength=500).pack(anchor=tk.W, pady=(0, 8))
 
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill=tk.X, pady=(0, 8))
-
-        self.auth_btn = ttk.Button(btn_frame, text="打开命令行授权 (bypy list)",
-                                   command=self._start_auth)
+        self.auth_btn = ttk.Button(btn_frame, text="获取授权链接", command=self._start_auth)
         self.auth_btn.pack(side=tk.LEFT, padx=2)
 
-        ttk.Label(frame, text="说明: 授权信息将缓存到 %USERPROFILE%\\.bypy，\n"
-                  "后续上传无需重复授权。").pack(anchor=tk.W)
+        ttk.Label(frame, text="授权码:").pack(anchor=tk.W, pady=(8, 2))
+        self.auth_code_var = tk.StringVar()
+        code_frame = ttk.Frame(frame)
+        code_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Entry(code_frame, textvariable=self.auth_code_var, width=40).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.confirm_btn = ttk.Button(code_frame, text="确认授权", command=self._confirm_auth, state=tk.DISABLED)
+        self.confirm_btn.pack(side=tk.LEFT)
+
+        ttk.Label(frame, text="状态:").pack(anchor=tk.W)
+        self.auth_status = scrolledtext.ScrolledText(frame, height=8, state=tk.DISABLED, wrap=tk.WORD)
+        self.auth_status.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
 
     # ==================== Canvas 滚动辅助 ====================
 
@@ -221,28 +231,104 @@ class GameSaveGUI:
     def _on_close(self):
         if self.is_running:
             self.cancel_requested = True
-            self._log("正在取消任务，请稍后...\n")
-            self.root.after(500, self._on_close)
+            self._close_attempts = getattr(self, '_close_attempts', 0) + 1
+            if self._close_attempts <= 3:
+                self._log("正在取消任务，请稍后...\n")
+                self.root.after(500, self._on_close)
+            else:
+                if messagebox.askyesno("强制关闭", "任务未能在超时内完成，是否强制退出？"):
+                    self.root.destroy()
+                else:
+                    self._close_attempts = 0
         else:
             self.root.destroy()
 
     # ==================== 百度云授权 ====================
 
+    # 百度 OAuth 常量（来自 bypy，程序内置无需外部安装）
+    _BAIDU_APP_KEY = "q8WE4EpCsau1oS0MplgMKNBn"
+    _BAIDU_SECRET_KEY = "PA4MhwB5RE7DacKtoP2i8ikCnNzAqYTD"
+    _BAIDU_AUTH_URL = "https://openapi.baidu.com/oauth/2.0/authorize"
+    _BAIDU_TOKEN_URL = "https://openapi.baidu.com/oauth/2.0/token"
+    _TOKEN_PATH = os.path.join(os.path.expanduser("~"), ".bypy", "bypy.json")
+
     def _start_auth(self):
-        """打开独立的命令行窗口执行 bypy list 交互式授权。"""
+        """在浏览器中打开百度 OAuth 授权页面，并激活授权码输入。"""
+        params = urllib.parse.urlencode({
+            'client_id': self._BAIDU_APP_KEY,
+            'response_type': 'code',
+            'redirect_uri': 'oob',
+            'scope': 'basic netdisk',
+        })
+        url = f"{self._BAIDU_AUTH_URL}?{params}"
+
+        self._auth_log("正在打开浏览器授权页面...\n")
+        self._auth_log(f"若浏览器未自动打开，请手动访问:\n{url}\n\n")
+
         try:
-            subprocess.Popen(
-                'start "百度云授权 - 完成后可关闭本窗口" cmd /k "bypy list && echo. && echo 授权完成！可关闭此窗口。 && pause"',
-                shell=True,
-            )
-            messagebox.showinfo("提示",
-                                "命令行窗口已打开。\n\n"
-                                "1. 在浏览器中打开显示的授权链接\n"
-                                "2. 登录百度账号并获取授权码\n"
-                                "3. 将授权码粘贴到命令行窗口中，按回车\n\n"
-                                "授权信息会缓存到本地，后续无需重复操作。")
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+        self.confirm_btn.configure(state=tk.NORMAL)
+        self.auth_code_var.set("")
+        self._auth_log("请将授权码粘贴到上方输入框，点击「确认授权」\n")
+
+    def _confirm_auth(self):
+        """使用授权码换取 access token 并保存。"""
+        auth_code = self.auth_code_var.get().strip()
+        if not auth_code or len(auth_code) < 16:
+            messagebox.showwarning("提示", "请输入有效的授权码")
+            return
+
+        self.auth_btn.configure(state=tk.DISABLED)
+        self.confirm_btn.configure(state=tk.DISABLED)
+        self._auth_log("正在换取授权令牌...\n")
+
+        thread = threading.Thread(target=self._exchange_token, args=(auth_code,), daemon=True)
+        thread.start()
+
+    def _exchange_token(self, auth_code):
+        try:
+            data = urllib.parse.urlencode({
+                'grant_type': 'authorization_code',
+                'code': auth_code,
+                'client_id': self._BAIDU_APP_KEY,
+                'client_secret': self._BAIDU_SECRET_KEY,
+                'redirect_uri': 'oob',
+            }).encode('utf-8')
+
+            req = urllib.request.Request(self._BAIDU_TOKEN_URL, data=data, method='POST')
+            resp = urllib.request.urlopen(req, timeout=30)
+            token = json.loads(resp.read().decode('utf-8'))
+
+            if 'error' in token:
+                self.root.after(0, lambda: self._auth_log(
+                    f"授权失败: {token.get('error_description', token['error'])}\n"))
+                return
+
+            # 保存 token 到 bypy 缓存目录
+            os.makedirs(os.path.dirname(self._TOKEN_PATH), exist_ok=True)
+            with open(self._TOKEN_PATH, 'w', encoding='utf-8') as f:
+                json.dump(token, f, ensure_ascii=False, indent=2)
+
+            self.root.after(0, lambda: self._auth_log(
+                "授权成功！令牌已保存到本地。\n"
+                f"缓存位置: {self._TOKEN_PATH}\n"
+                "现在可切换到「备份任务」页面上传文件到百度云。\n"))
+
         except Exception as e:
-            messagebox.showerror("错误", f"无法启动命令行: {e}")
+            self.root.after(0, lambda: self._auth_log(f"授权过程出错: {e}\n"))
+        finally:
+            self.root.after(0, lambda: self.auth_btn.configure(state=tk.NORMAL))
+            self.root.after(0, lambda: self.confirm_btn.configure(state=tk.NORMAL))
+            self.root.after(0, lambda: self.auth_code_var.set(""))
+
+    def _auth_log(self, msg):
+        self.auth_status.configure(state=tk.NORMAL)
+        self.auth_status.insert(tk.END, msg)
+        self.auth_status.see(tk.END)
+        self.auth_status.configure(state=tk.DISABLED)
 
     # ==================== 备份任务（原有逻辑） ====================
 
@@ -305,6 +391,7 @@ class GameSaveGUI:
 
         self.is_running = True
         self.cancel_requested = False
+        self._task_id = getattr(self, '_task_id', 0) + 1
         self.execute_btn.configure(state=tk.DISABLED)
         self.cancel_btn.configure(state=tk.NORMAL)
         self.scan_progress['value'] = 0
@@ -313,12 +400,16 @@ class GameSaveGUI:
         self._log("开始执行备份任务\n")
 
         thread = threading.Thread(target=self._run_backup_task,
-                                  args=(selected_dirs, backup_path, zip_path), daemon=True)
+                                  args=(selected_dirs, backup_path, zip_path, self._task_id),
+                                  daemon=True)
         thread.start()
 
     def _cancel_backup(self):
         self.cancel_requested = True
-        self._log("用户请求取消...\n")
+        self.is_running = False
+        self.execute_btn.configure(state=tk.NORMAL)
+        self.cancel_btn.configure(state=tk.DISABLED)
+        self._log("任务已取消\n")
 
     def _progress_callback(self, filename, status, message):
         self.progress_queue.put({
@@ -343,7 +434,7 @@ class GameSaveGUI:
             pass
         self.root.after(100, self._poll_progress_queue)
 
-    def _run_backup_task(self, selected_dirs, backup_path, zip_path):
+    def _run_backup_task(self, selected_dirs, backup_path, zip_path, task_id):
         try:
             save_ext = self.cfg.get("save_extensions", {'.sav', '.save'})
             whitelist = self.cfg.get("white_list_root_path", {})
@@ -358,8 +449,8 @@ class GameSaveGUI:
 
             for i, game_dir in enumerate(selected_dirs):
                 if self.cancel_requested:
-                    self._progress_callback('', 'scan_info', '任务已取消')
-                    break
+                    self._progress_callback('', 'scan_info', '扫描已取消\n')
+                    return
 
                 game_name = os.path.basename(game_dir)
                 self._progress_callback(game_name, 'scan_dir',
@@ -402,30 +493,29 @@ class GameSaveGUI:
             self._progress_callback('', 'scan_info',
                                     f"\n扫描完成: {ok_count}/{len(all_results)} 个游戏目录, 共 {total_files} 个文件\n")
 
-            if self.cancel_requested:
-                self._finish_task()
+            if self.cancel_requested or self._task_id != task_id:
                 return
 
             self._progress_callback('', 'pack_info', "开始打包 ZIP...\n")
             dir_packager.package_file(backup_path, zip_path, progress_callback=self._progress_callback)
 
-            if self.cancel_requested:
-                self._finish_task()
+            if self.cancel_requested or self._task_id != task_id:
                 return
 
             self._progress_callback('', 'upload_info', "开始上传到百度云...\n")
             baiduyun_upload.upload_to_baiduyun(zip_path, progress_callback=self._progress_callback)
 
-            self._progress_callback('', 'scan_info', "清理临时文件...\n")
-            game_scanner.remove_directory(backup_path)
-            game_scanner.remove_directory(zip_path)
-
-            self._progress_callback('', 'scan_info', "全部任务完成!\n")
+            if not self.cancel_requested and self._task_id == task_id:
+                self._progress_callback('', 'scan_info', "清理临时文件...\n")
+                game_scanner.remove_directory(backup_path)
+                game_scanner.remove_directory(zip_path)
+                self._progress_callback('', 'scan_info', "全部任务完成!\n")
 
         except Exception as e:
             self._progress_callback('', 'scan_info', f"错误: {e}\n")
         finally:
-            self._finish_task()
+            if self._task_id == task_id:
+                self._finish_task()
 
     def _finish_task(self):
         self.is_running = False
