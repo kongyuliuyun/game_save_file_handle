@@ -16,6 +16,7 @@ def _default_log(msg):
 def scan_game_directories(root_path):
     """
     扫描指定文件夹下的所有子目录（游戏目录）。
+    同时检查根目录本身是否包含存档文件，如果包含则将其也加入列表。
     """
     game_dirs = []
     if not os.path.exists(root_path):
@@ -25,6 +26,16 @@ def scan_game_directories(root_path):
         if os.path.isdir(item_path):
             game_dirs.append(item_path)
     return game_dirs
+
+
+def is_game_directory(directory):
+    """检查目录直接包含 .exe 文件，若是则判定为游戏目录。"""
+    if not os.path.exists(directory):
+        return False
+    for item in os.listdir(directory):
+        if item.lower().endswith('.exe'):
+            return True
+    return False
 
 
 def find_save_file_parent_dirs(game_dir, save_extensions, progress_callback=None):

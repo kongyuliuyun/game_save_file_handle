@@ -102,7 +102,6 @@ class GameSaveGUI:
         self.folder_path = tk.StringVar()
         ttk.Entry(top_frame, textvariable=self.folder_path).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         ttk.Button(top_frame, text="选择文件夹", command=self._select_folder).pack(side=tk.LEFT, padx=2)
-        ttk.Button(top_frame, text="扫描子目录", command=self._refresh_game_list).pack(side=tk.LEFT, padx=2)
 
         # ---- 分割区域 ----
         paned = ttk.PanedWindow(self.content, orient=tk.VERTICAL)
@@ -350,7 +349,13 @@ class GameSaveGUI:
             return
 
         self.game_listbox.delete(0, tk.END)
-        self.game_dirs = game_scanner.scan_game_directories(folder)
+
+        if game_scanner.is_game_directory(folder):
+            # 当前目录本身是游戏目录（含 .exe），只显示此目录
+            self.game_dirs = [folder]
+        else:
+            # 当前目录是游戏父目录，列出其所有子目录
+            self.game_dirs = game_scanner.scan_game_directories(folder)
 
         if not self.game_dirs:
             self._log("未找到子目录\n")
