@@ -422,14 +422,37 @@ class GameSaveGUI:
         try:
             while True:
                 msg = self.progress_queue.get_nowait()
-                if msg['status'] in ('scan_found', 'copy_file', 'scan_info', 'scan_dir', 'scan_done',
-                                     'scan_start', 'scan_skip', 'scan_warn', 'scan_copy',
-                                     'pack_info', 'pack_progress', 'upload_info'):
+                status = msg['status']
+
+                # 日志消息
+                if status in ('scan_found', 'copy_file', 'scan_info', 'scan_dir',
+                              'scan_done', 'scan_start', 'scan_skip', 'scan_warn',
+                              'scan_copy', 'pack_info', 'upload_info'):
                     self._log(f"  {msg['message']}\n")
-                if msg['status'] == 'scan_progress':
+
+                # 打包进度上限
+                elif status == 'pack_max':
+                    self.pack_progress['maximum'] = msg.get('message', 0)
+                    self.pack_progress['value'] = 0
+
+                # 打包进度（message = 当前已打包文件数）
+                elif status == 'pack_progress':
+                    self.pack_progress['value'] = msg.get('message', 0)
+
+                # 清理扫描进度
+                elif status == 'scan_progress':
                     self.scan_progress['value'] = msg.get('value', 0)
-                if msg['status'] == 'pack_progress_total':
-                    self.pack_progress['value'] = msg.get('value', 0)
+
+                # 上传开始：切换为滚动进度条
+                elif status == 'upload_start':
+                    self.pack_progress.configure(mode='indeterminate')
+                    self.pack_progress.start()
+
+                # 上传结束：恢复正常模式并填满
+                elif status == 'upload_done':
+                    self.pack_progress.stop()
+                    self.pack_progress.configure(mode='determinate', value=self.pack_progress['maximum'])
+
         except queue.Empty:
             pass
         self.root.after(100, self._poll_progress_queue)
@@ -503,7 +526,11 @@ class GameSaveGUI:
                 return
 
             self._progress_callback('', 'upload_info', "开始上传到百度云...\n")
-            baiduyun_upload.upload_to_baiduyun(zip_path, progress_callback=self._progress_callback)
+            self._progress_callback('', 'upload_start', '')
+            try:
+                baiduyun_upload.upload_to_baiduyun(zip_path, progress_callback=self._progress_callback)
+            finally:
+                self._progress_callback('', 'upload_done', '')
 
             if not self.cancel_requested and self._task_id == task_id:
                 self._progress_callback('', 'scan_info', "清理临时文件...\n")
