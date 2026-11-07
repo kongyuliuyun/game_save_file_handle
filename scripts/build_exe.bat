@@ -21,7 +21,7 @@ if not exist "requirements.txt" (
 )
 
 echo ========================================
-echo  GameSaveBackup 2.0 - Build EXE
+echo  GameSaveBackup 2.0.1 - Build EXE
 echo ========================================
 echo.
 

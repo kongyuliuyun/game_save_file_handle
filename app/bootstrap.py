@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 APP_NAME = "游戏存档备份工具"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 
 class ThemeManager(QObject):
