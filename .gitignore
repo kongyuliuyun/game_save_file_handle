@@ -12,6 +12,7 @@ venv/
 build/
 dist/
 *.spec
+!GameSaveBackup.spec
 
 # IDE
 .idea/
@@ -30,5 +31,11 @@ Thumbs.db
 # Logs
 *.log
 
+# 仅本地保留的重构交接文档
+docs/重构交接.md
+
 # Claude Code instructions (personal)
 CLAUDE.md
+
+# 界面冒烟测试截图（运行产物）
+docs/preview/smoke/

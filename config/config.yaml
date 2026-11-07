@@ -1,8 +1,24 @@
-# 存档文件扩展名（用,分隔）
-save_extensions : {'.sav', '.save', '.esm', '.esp', '.bsa', '.ba2','.rpgsave', '.rmmzsave', '.phxsav'}
-# 扫描白名单设置（仅用于从config.yaml加载白名单的场景，GUI模式下可动态配置）
-white_list_root_path : {'default': ['all']}
-# 备份输出目录（默认为可执行文件同目录下的 game-save-backup）
-save_backup_path : './game-save-backup'
-# 压缩包输出目录（默认为可执行文件同目录下的 game-save-backup-zip）
-zip_backup_path : './game-save-backup-zip'
+# 游戏存档备份工具配置文件
+# 修改后重启程序生效；也可在「设置」页面直接编辑并保存。
+
+save_extensions:
+- .ba2
+- .bsa
+- .esm
+- .esp
+- .phxsav
+- .rmmzsave
+- .rpgsave
+- .sav
+- .save
+white_list_root_path:
+  default:
+  - all
+save_backup_path: ./game-save-backup
+zip_backup_path: ./game-save-backup-zip
+remote_dir: /apps/bypy/game-save-backup
+keep_local_backup: false
+upload_enabled: true
+theme: light
+upload_threads: 3
+verify_upload: true

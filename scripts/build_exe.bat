@@ -1,42 +1,61 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
+
+REM Always build from the project root (parent of this script directory).
 cd /d "%~dp0.."
+if errorlevel 1 (
+    echo [ERROR] Cannot switch to project root: %~dp0..
+    pause
+    exit /b 1
+)
+if not exist "run_gui.py" (
+    echo [ERROR] run_gui.py not found in %CD%
+    echo [ERROR] Keep this script inside the project's scripts directory.
+    pause
+    exit /b 1
+)
+if not exist "requirements.txt" (
+    echo [ERROR] requirements.txt not found in %CD%
+    pause
+    exit /b 1
+)
 
 echo ========================================
-echo  GameSaveBackup - Build EXE
+echo  GameSaveBackup 2.0 - Build EXE
 echo ========================================
 echo.
 
-REM Use clean venv to avoid system package conflicts (e.g. pathlib)
+REM Use a clean virtual environment to avoid conflicting packages in the
+REM base Python installation (for example the old pathlib backport).
 if not exist ".venv_build" (
     echo [INFO] Creating clean virtual environment...
     python -m venv .venv_build
+    if errorlevel 1 goto :error
 )
 
-call .venv_build\Scripts\activate.bat
+call ".venv_build\Scripts\activate.bat"
+if errorlevel 1 goto :error
 
 echo [INFO] Installing dependencies...
-pip install pyyaml bypy pyinstaller -q 2>nul
+python -m pip install -r requirements.txt pyinstaller -q
+if errorlevel 1 goto :error
 
 echo [INFO] Building...
 echo.
-
-REM Find Tcl/Tk DLLs from parent Python installation
-for /f "delims=" %%i in ('python -c "import sys; print(sys.base_prefix)"') do set "BASE=%%i"
-
-REM Convert PNG to ICO if needed (requires Pillow):
-REM   pip install Pillow -q
-REM   python -c "from PIL import Image; img=Image.open('img/icon.png'); img.save('img/icon.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)], bitmap_format='bmp')"
-
-set "ICON_PARAM="
-if exist "img\icon.ico" set "ICON_PARAM=--icon img\icon.ico"
-
-pyinstaller --onefile --windowed --name "GameSaveBackup" %ICON_PARAM% --add-data "config\config.yaml;config" --add-data "img\icon.ico;img" --collect-all tkinter --collect-all bypy --add-binary "%BASE%\Library\bin\tcl86t.dll;." --add-binary "%BASE%\Library\bin\tk86t.dll;." --add-binary "%BASE%\Library\bin\libssl-1_1-x64.dll;." --add-binary "%BASE%\Library\bin\libcrypto-1_1-x64.dll;." --hidden-import yaml --clean gui/app.py
+python -m PyInstaller GameSaveBackup.spec --clean
+if errorlevel 1 goto :error
 
 echo.
 echo ========================================
 echo  Build complete!
 echo  EXE: dist\GameSaveBackup.exe
-echo  Put config.yaml next to the exe.
+echo  Optional: put config.yaml next to the exe to customize settings.
 echo ========================================
 pause
+exit /b 0
+
+:error
+echo.
+echo [ERROR] Build failed.
+pause
+exit /b 1
