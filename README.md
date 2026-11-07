@@ -92,7 +92,12 @@ python -m game_save_file_handle.run_gui
 配置文件按以下顺序查找：
 
 1. 可执行文件（或项目根目录）旁的 `config.yaml` —— 推荐用户自行放置；
-2. 内置的 `config/config.yaml`。
+2. 用户配置目录 `%APPDATA%\GameSaveBackup\config.yaml`（exe 目录不可写时自动使用）；
+3. 内置的 `config/config.yaml`（打包产物内的只读默认值）。
+
+保存设置时优先写入第 1 项；若 exe 所在目录不可写（例如安装在
+`Program Files`），会自动回退到第 2 项。程序绝不会把配置写入打包器退出即
+销毁的临时目录，因此修改主题、扩展名等设置后重启仍然生效。
 
 ```yaml
 # 存档文件扩展名
@@ -180,7 +185,7 @@ game_save_file_handle/
 ## 测试
 
 ```bash
-# 核心逻辑（20 项）
+# 核心逻辑与配置持久化（25 项）
 python tests/test_core.py
 
 # 上传逻辑（6 项，使用本地模拟 HTTP 服务器校验字节）

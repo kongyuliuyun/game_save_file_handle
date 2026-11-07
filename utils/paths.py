@@ -10,6 +10,7 @@ __all__ = [
     "is_frozen",
     "app_root",
     "resource_path",
+    "user_config_path",
     "config_path",
     "work_dir",
     "token_file",
@@ -44,18 +45,46 @@ def resource_path(*parts: str) -> Path:
     return base.joinpath(*parts)
 
 
-def config_path() -> Path:
-    """配置文件路径。
+def user_config_path() -> Path:
+    """用户级配置文件路径（exe 目录不可写时的回退位置）。
 
-    优先使用 exe/项目根目录下的 ``config.yaml``（用户可直接编辑），
-    其次退回打包内置的 ``config/config.yaml``。
+    - Windows：``%APPDATA%/GameSaveBackup/config.yaml``
+    - 其他平台：``$XDG_CONFIG_HOME/GameSaveBackup/config.yaml``
+    """
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or os.path.expanduser("~"))
+    else:
+        base = Path(
+            os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+        )
+    return base / "GameSaveBackup" / "config.yaml"
+
+
+def config_path() -> Path:
+    """配置文件的读写路径。
+
+    查找顺序：
+
+    1. exe / 项目根目录下的 ``config.yaml``（便携模式，用户可直接编辑）；
+    2. 开发环境：项目内的 ``config/config.yaml``（可读写）；
+    3. 用户配置目录中的 ``config.yaml``（打包后 exe 目录不可写时的回退）；
+    4. 都不存在时返回 exe 旁的 ``config.yaml``，作为首次保存位置。
+
+    **绝不能**把用户配置写进 PyInstaller 的 ``sys._MEIPASS`` 临时目录：
+    那里每次启动都会重新解压，退出后即丢弃，设置会「看似保存、重启丢失」。
     """
     external = app_root() / "config.yaml"
     if external.is_file():
         return external
-    bundled = resource_path("config", "config.yaml")
-    if bundled.is_file():
-        return bundled
+
+    if not is_frozen():
+        bundled = app_root() / "config" / "config.yaml"
+        if bundled.is_file():
+            return bundled
+
+    user = user_config_path()
+    if user.is_file():
+        return user
     return external
 
 

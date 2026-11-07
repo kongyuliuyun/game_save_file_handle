@@ -331,6 +331,8 @@ class SettingsPage(QWidget):
             self.status_message.emit(exc.message, "error")
             return
         self.hint.setText(f"已保存到 {target}")
+        # 若因权限回退到用户配置目录，同步刷新显示的实际路径
+        self.path_label.setText(str(target))
         self.status_message.emit("设置已保存", "success")
         self.saved.emit(config)
 

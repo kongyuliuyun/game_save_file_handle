@@ -15,6 +15,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_PARENT = PROJECT_ROOT.parent
@@ -22,12 +23,15 @@ for _path in (str(PACKAGE_PARENT), str(PROJECT_ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
+from game_save_file_handle.core import config as config_module
 from game_save_file_handle.core.backup import copy_saves, safe_filename
 from game_save_file_handle.core.config import (
     AppConfig,
     format_whitelist,
+    load_config,
     parse_whitelist,
 )
+from game_save_file_handle.utils import paths
 from game_save_file_handle.core.errors import AppError, TaskCancelled
 from game_save_file_handle.core.models import GameStatus
 from game_save_file_handle.core.packager import pack_artifacts
@@ -361,6 +365,91 @@ class FilenameTests(unittest.TestCase):
         self.assertEqual(safe_filename('a/b:c*d?'), "a_b_c_d_")
         self.assertEqual(safe_filename("CON"), "_CON")
         self.assertEqual(safe_filename("   "), "unnamed")
+
+
+class ConfigPersistenceTests(unittest.TestCase):
+    """回归：打包版保存设置后重启恢复默认。
+
+    根因是旧逻辑把配置写进 PyInstaller 的 ``sys._MEIPASS`` 临时目录，
+    退出即丢失；这里验证写入目标始终是持久化位置。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = Path(tempfile.mkdtemp(prefix="gsb-config-"))
+        self.exe_dir = self._tmp / "app"
+        self.exe_dir.mkdir()
+        self.user_config = self._tmp / "roaming" / "GameSaveBackup" / "config.yaml"
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _patch_frozen(self, *, frozen: bool = True):
+        return (
+            mock.patch.object(paths, "app_root", return_value=self.exe_dir),
+            mock.patch.object(paths, "is_frozen", return_value=frozen),
+            mock.patch.object(paths, "user_config_path", return_value=self.user_config),
+        )
+
+    def test_frozen_without_config_targets_exe_dir(self) -> None:
+        """打包版首次保存应落在 exe 同目录，而不是 _MEIPASS。"""
+        app_root_patch, frozen_patch, user_patch = self._patch_frozen()
+        with app_root_patch, frozen_patch, user_patch:
+            self.assertEqual(paths.config_path(), self.exe_dir / "config.yaml")
+
+    def test_frozen_uses_existing_user_config(self) -> None:
+        """exe 目录没有配置时，读取已存在的用户级配置。"""
+        self.user_config.parent.mkdir(parents=True)
+        self.user_config.write_text("theme: dark\n", encoding="utf-8")
+        app_root_patch, frozen_patch, user_patch = self._patch_frozen()
+        with app_root_patch, frozen_patch, user_patch:
+            self.assertEqual(paths.config_path(), self.user_config)
+
+    def test_dev_prefers_writable_project_config(self) -> None:
+        """开发环境仍使用项目内可读写的 config/config.yaml。"""
+        project = self._tmp / "project"
+        bundled = project / "config" / "config.yaml"
+        bundled.parent.mkdir(parents=True)
+        bundled.write_text("theme: light\n", encoding="utf-8")
+        with mock.patch.object(paths, "app_root", return_value=project), \
+                mock.patch.object(paths, "is_frozen", return_value=False), \
+                mock.patch.object(paths, "user_config_path", return_value=self.user_config):
+            self.assertEqual(paths.config_path(), bundled)
+
+    def test_frozen_save_and_reload_roundtrip(self) -> None:
+        """打包版保存后重新加载，主题与扩展名必须保留。"""
+        target = self.exe_dir / "config.yaml"
+        bundled = self._tmp / "_MEIPASS" / "config" / "config.yaml"
+        with mock.patch.object(config_module, "config_path", return_value=target), \
+                mock.patch.object(config_module, "is_frozen", return_value=True), \
+                mock.patch.object(config_module, "resource_path", return_value=bundled), \
+                mock.patch.object(config_module, "user_config_path", return_value=self.user_config), \
+                mock.patch.object(config_module, "app_root", return_value=self.exe_dir):
+            config = AppConfig(theme="dark", save_extensions={".sav", ".custom"})
+            saved = config.save()
+            self.assertEqual(saved, target)
+            self.assertTrue(target.is_file())
+
+            reloaded = load_config()
+            self.assertEqual(reloaded.theme, "dark")
+            self.assertIn(".custom", reloaded.extensions())
+
+    def test_save_falls_back_when_exe_dir_unwritable(self) -> None:
+        """exe 目录不可写时回退到用户配置目录，而不是报错或丢失。"""
+        blocked = self.exe_dir / "config.yaml"
+        original_write = AppConfig._write
+
+        def fake_write(target: Path, text: str) -> None:
+            if target == blocked:
+                raise PermissionError("拒绝访问")
+            original_write(target, text)
+
+        with mock.patch.object(config_module, "user_config_path", return_value=self.user_config), \
+                mock.patch.object(AppConfig, "_write", side_effect=fake_write):
+            saved = AppConfig(theme="dark").save(blocked)
+
+        self.assertEqual(saved, self.user_config)
+        self.assertTrue(self.user_config.is_file())
+        self.assertEqual(load_config(self.user_config).theme, "dark")
 
 
 if __name__ == "__main__":

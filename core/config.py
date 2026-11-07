@@ -20,7 +20,14 @@ from typing import Any, Iterable
 import yaml
 
 from .errors import ConfigError
-from ..utils.paths import app_root, config_path, work_dir
+from ..utils.paths import (
+    app_root,
+    config_path,
+    is_frozen,
+    resource_path,
+    user_config_path,
+    work_dir,
+)
 
 __all__ = [
     "DEFAULT_EXTENSIONS",
@@ -215,8 +222,20 @@ class AppConfig:
         return data
 
     def save(self, path: Path | None = None) -> Path:
-        """写回 YAML。默认写到当前生效的配置文件，保证「读哪儿写哪儿」。"""
-        target = Path(path) if path else config_path()
+        """写回 YAML。
+
+        默认写到当前生效的配置文件，保证「读哪儿写哪儿」。打包运行时
+        **绝不写入** ``sys._MEIPASS`` 临时目录：那里每次启动都会重新解压，
+        退出后即丢弃。若 exe 所在目录不可写（例如安装在 Program Files），
+        自动回退到用户配置目录，避免出现「保存成功、重启丢失」。
+        """
+        if path is not None:
+            target = Path(path)
+        else:
+            target = config_path()
+            if is_frozen() and target == resource_path("config", "config.yaml"):
+                target = app_root() / "config.yaml"
+
         payload = yaml.safe_dump(
             self.to_dict(), allow_unicode=True, sort_keys=False, default_flow_style=False
         )
@@ -224,12 +243,26 @@ class AppConfig:
             "# 游戏存档备份工具配置文件\n"
             "# 修改后重启程序生效；也可在「设置」页面直接编辑并保存。\n\n"
         )
+        text = header + payload
+
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(header + payload, encoding="utf-8")
+            self._write(target, text)
+            return target
         except OSError as exc:
+            fallback = user_config_path()
+            if fallback != target:
+                try:
+                    self._write(fallback, text)
+                    return fallback
+                except OSError:
+                    pass
             raise ConfigError(f"配置保存失败: {target}", detail=str(exc)) from exc
-        return target
+
+    @staticmethod
+    def _write(target: Path, text: str) -> None:
+        """把配置文本写入目标文件（目录不存在时自动创建）。"""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
 
 
 def parse_whitelist(text: str) -> dict[str, list[str]]:
@@ -310,8 +343,17 @@ def resolve_path(value: str, *, base: Path | None = None) -> tuple[Path, str]:
 
 
 def load_config(path: Path | None = None) -> AppConfig:
-    """读取配置；文件缺失或损坏时返回默认配置而不是崩溃。"""
-    target = Path(path) if path else config_path()
+    """读取配置；文件缺失或损坏时返回默认配置而不是崩溃。
+
+    未显式指定路径且用户配置尚不存在时，回退读取打包内置的默认配置；
+    内置配置也不存在才使用代码默认值。
+    """
+    explicit = path is not None
+    target = Path(path) if explicit else config_path()
+    if not target.is_file() and not explicit:
+        bundled = resource_path("config", "config.yaml")
+        if bundled.is_file() and bundled != target:
+            target = bundled
     if not target.is_file():
         return AppConfig().normalized()
     try:
