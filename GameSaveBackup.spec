@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置（2.0.1）。
+"""PyInstaller 打包配置（2.0.2）。
 
 用法（项目根目录）::
 
