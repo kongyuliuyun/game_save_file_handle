@@ -263,19 +263,20 @@ QPushButton#IconButton {{
 QPushButton#IconButton:hover {{ background: {p.surface_hover}; }}
 
 /* ---------- 输入控件 ---------- */
-QLineEdit, QComboBox, QSpinBox {{
+QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {{
     background: {p.surface_alt};
+    color: {p.text};
     border: 1px solid {p.border};
     border-radius: 9px;
     padding: 8px 12px;
     selection-background-color: {p.primary};
     selection-color: {p.on_primary};
 }}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
     border: 1px solid {p.primary};
     background: {p.surface};
 }}
-QLineEdit:disabled {{ color: {p.muted}; }}
+QLineEdit:disabled, QPlainTextEdit:disabled, QTextEdit:disabled {{ color: {p.muted}; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
 QComboBox QAbstractItemView {{
     background: {p.surface};

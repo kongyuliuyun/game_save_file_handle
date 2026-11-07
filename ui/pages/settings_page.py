@@ -47,6 +47,8 @@ class SettingsPage(QWidget):
         self.config = config
         self._build_ui()
         self._sync_from_config()
+        # 顶栏切换主题时只同步下拉框，不能整体重载配置
+        ThemeManager.instance().changed.connect(self._on_theme_applied)
 
     # ==================================================================
     # 界面
@@ -268,13 +270,16 @@ class SettingsPage(QWidget):
         self.verify_check.setChecked(self.config.verify_upload)
         self.upload_check.setChecked(self.config.upload_enabled)
         self.threads_spin.setValue(self.config.upload_threads)
+        self._set_theme_combo(self.config.theme)
 
-        index = self.theme_combo.findData(self.config.theme)
+        self.path_label.setText(str(config_path()))
+
+    def _set_theme_combo(self, name: str) -> None:
+        """只更新主题下拉框，避免触发其他控件的联动。"""
+        index = self.theme_combo.findData(name)
         self.theme_combo.blockSignals(True)
         self.theme_combo.setCurrentIndex(max(0, index))
         self.theme_combo.blockSignals(False)
-
-        self.path_label.setText(str(config_path()))
 
     def _collect(self) -> AppConfig:
         raw = self.extensions_edit.toPlainText()
@@ -321,6 +326,15 @@ class SettingsPage(QWidget):
     def _on_theme_changed(self) -> None:
         name = self.theme_combo.currentData() or "light"
         ThemeManager.instance().set_theme(name)
+
+    def _on_theme_applied(self, palette) -> None:
+        """顶栏切换主题后，只同步主题下拉框与内存中的主题值。
+
+        这里**不能**调用 ``_sync_from_config()``：它会用磁盘上的配置
+        覆盖所有输入控件，导致用户尚未保存的扩展名、白名单等被还原。
+        """
+        self.config.theme = palette.name
+        self._set_theme_combo(palette.name)
 
     def _save(self) -> None:
         config = self._collect()

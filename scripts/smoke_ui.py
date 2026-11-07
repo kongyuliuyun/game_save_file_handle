@@ -238,6 +238,10 @@ def main() -> int:
     settings_icon_light = _icon_bytes(settings.reload_button)
     cancel_icon_light = _icon_bytes(page.cancel_button)
 
+    # 模拟用户已编辑设置但尚未点「保存设置」
+    settings.extensions_edit.setPlainText(".unsaved-ext")
+    settings.whitelist_edit.setPlainText(r"D:\Games => all")
+
     for name in ("dark", "light"):
         try:
             ThemeManager.instance().set_theme(name)
@@ -260,11 +264,42 @@ def main() -> int:
         "深色主题下取消按钮图标重新着色",
     )
     check(not page.cancel_button.icon().isNull(), "深色主题下取消按钮图标非空")
+    check(
+        settings.theme_combo.currentData() == "dark",
+        "顶栏切换深色后设置页主题下拉框同步",
+    )
+    check(
+        settings.extensions_edit.toPlainText() == ".unsaved-ext",
+        "主题切换不覆盖未保存的扩展名",
+    )
+    check(
+        settings.whitelist_edit.toPlainText() == r"D:\Games => all",
+        "主题切换不覆盖未保存的白名单",
+    )
+
+    # 采样扩展名输入框背景，确认暗色主题下不再是系统白底
+    image = window.grab().toImage()
+    edit = settings.extensions_edit
+    origin = edit.mapTo(window, QPoint(0, 0))
+    sample = image.pixelColor(origin.x() + 30, origin.y() + edit.height() - 15)
+    check(
+        sample.lightness() < 120,
+        f"深色主题下扩展名输入框为深色背景（{sample.name()}）",
+    )
+
     ThemeManager.instance().set_theme("light")
     app.processEvents()
     check(
         _icon_bytes(settings.reload_button) == settings_icon_light,
         "切回浅色主题后设置页图标恢复原色",
+    )
+    check(
+        settings.theme_combo.currentData() == "light",
+        "切回浅色后设置页主题下拉框同步",
+    )
+    check(
+        settings.extensions_edit.toPlainText() == ".unsaved-ext",
+        "切回浅色后未保存的扩展名仍在",
     )
 
     print("== 7. 真实流程：扫描 → 备份（关闭上传） ==")
